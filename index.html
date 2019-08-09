@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Create a hover effect</title>
+    <meta
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v1.2.0/mapbox-gl.js"></script>
+    <script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
+    <link
+      href="https://api.tiles.mapbox.com/mapbox-gl-js/v1.2.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      mapboxgl.accessToken =
+        "pk.eyJ1IjoibW9yZ2FuaGVybG9ja2VyIiwiYSI6Ii1zLU4xOWMifQ.FubD68OEerk74AYCLduMZQ";
+      var map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/dark-v9",
+        center: [-86.77705764770508, 36.16202793326575],
+        zoom: 15
+      });
+
+      map.on("load", function() {
+        fetch("edges.json")
+          .then(function(response) {
+            return response.json();
+          })
+          .then(function(edges) {
+            var fc = {
+              type: "FeatureCollection",
+              features: []
+            };
+
+            var flows = {
+              type: "FeatureCollection",
+              features: []
+            };
+
+            const keys = Object.keys(edges);
+            var k = 0;
+            for (let key of keys) {
+              edges[key].id = k;
+
+              var stats = [];
+              var adjacents = Object.keys(edges[key].properties.adjacent);
+
+              for (let adjacent of adjacents) {
+                if (edges[key].properties.adjacent[adjacent] <= 1) {
+                  delete edges[key].properties.adjacent[adjacent];
+                }
+              }
+
+              adjacents = Object.keys(edges[key].properties.adjacent);
+
+              for (let adjacent of adjacents) {
+                stats.push(edges[key].properties.adjacent[adjacent]);
+              }
+
+              for (let adjacent of adjacents) {
+                var quantile = ss.quantileRank(
+                  stats,
+                  edges[key].properties.adjacent[adjacent]
+                );
+                edges[key].properties.adjacent[adjacent] =
+                  Math.floor(quantile * 10) + 1;
+              }
+
+              fc.features.push(edges[key]);
+              k++;
+            }
+
+            map.addLayer({
+              id: "edges",
+              type: "line",
+              source: {
+                type: "geojson",
+                data: fc
+              },
+              layout: {
+                "line-join": "round",
+                "line-cap": "round"
+              },
+              paint: {
+                "line-opacity": 0.2,
+                "line-color": "#fff",
+                "line-width": [
+                  "case",
+                  ["boolean", ["feature-state", "hover"], false],
+                  20,
+                  1
+                ]
+              }
+            });
+
+            map.addLayer({
+              id: "flows",
+              type: "line",
+              source: {
+                type: "geojson",
+                data: flows
+              },
+              layout: {
+                "line-join": "round",
+                "line-cap": "round"
+              },
+              paint: {
+                "line-opacity": [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "value"],
+                  1,
+                  0.1,
+                  2,
+                  0.2,
+                  3,
+                  0.3,
+                  4,
+                  0.4,
+                  5,
+                  0.5,
+                  6,
+                  0.6,
+                  7,
+                  0.7,
+                  8,
+                  0.8,
+                  9,
+                  0.9,
+                  10,
+                  0.95
+                ],
+                "line-color": "#fff",
+                "line-width": [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "value"],
+                  1,
+                  1,
+                  2,
+                  2,
+                  3,
+                  3,
+                  4,
+                  4,
+                  5,
+                  5,
+                  6,
+                  6,
+                  7,
+                  7,
+                  8,
+                  10,
+                  9,
+                  12,
+                  10,
+                  15
+                ]
+              }
+            });
+
+            var hoveredStateId = null;
+
+            map.on("mousemove", "edges", function(e) {
+              if (e.features.length > 0) {
+                if (hoveredStateId) {
+                  map.setFeatureState(
+                    { source: "edges", id: hoveredStateId },
+                    { hover: false }
+                  );
+                }
+                hoveredStateId = e.features[0].id;
+                map.setFeatureState(
+                  { source: "edges", id: hoveredStateId },
+                  { hover: true }
+                );
+
+                flows.features = [];
+                const adjacents = JSON.parse(e.features[0].properties.adjacent);
+
+                for (let adjacent of Object.keys(adjacents)) {
+                  var val = adjacents[adjacent];
+                  edges[adjacent].properties.value = val;
+                  flows.features.push(edges[adjacent]);
+                }
+                map.getSource("flows").setData(flows);
+              }
+            });
+
+            // When the mouse leaves the state-fill layer, update the feature state of the
+            // previously hovered feature.
+            map.on("mouseleave", "edges", function() {
+              if (hoveredStateId) {
+                map.setFeatureState(
+                  { source: "edges", id: hoveredStateId },
+                  { hover: false }
+                );
+              }
+              hoveredStateId = null;
+              flows.features = [];
+              map.getSource("flows").setData(flows);
+            });
+          });
+      });
+    </script>
+  </body>
+</html>
